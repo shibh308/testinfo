@@ -34,8 +34,30 @@ type FuncData struct {
 	CallPos         []token.Pos
 }
 
-func (fd FuncData) Type () string {
-	return pref[fd.testType]
+func (x FuncData) Type () string {
+	return pref[x.testType]
+}
+
+func Format(x FuncData, fs *token.FileSet) string {
+	s := fmt.Sprintf(
+		"{" +
+			"PackageName:%s, " +
+			"FuncName:%s, " +
+			"type:%s, " +
+			"FuncDeclPos:\"%s,%d,%d\", " +
+			"TestDeclPos:\"%s,%d,%d\", " +
+			"CallPos:[",
+		x.PackageName, x.FuncName, x.Type(),
+		filepath.Base(fs.Position(x.FuncDeclPos).Filename), fs.Position(x.FuncDeclPos).Line, fs.Position(x.FuncDeclPos).Column,
+		filepath.Base(fs.Position(x.TestDeclPos).Filename), fs.Position(x.TestDeclPos).Line, fs.Position(x.TestDeclPos).Column,
+	)
+	for j, cp := range x.CallPos {
+		s += fmt.Sprintf("\"%s,%d,%d\"", filepath.Base(fs.Position(cp).Filename), fs.Position(cp).Line, fs.Position(cp).Column)
+		if j != len(x.CallPos) - 1 {
+			s += ", "
+		}
+	}
+	return s + "]}"
 }
 
 func callPosList (n *ast.FuncDecl, target types.Object, info *types.Info) []token.Pos {
@@ -53,18 +75,9 @@ func callPosList (n *ast.FuncDecl, target types.Object, info *types.Info) []toke
 	return result
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	fs := pass.Fset
-
-	cfg := &types.Config{Importer: importer.Default()}
-	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
-	_, err := cfg.Check("main", fs, pass.Files, info)
-	if err != nil {
-		return nil, err
-	}
-
+func getFuncData(fs *token.FileSet, files []*ast.File, info *types.Info) ([]FuncData, error) {
 	var mainFiles, testFiles []*ast.File
-	for _, f := range pass.Files {
+	for _, f := range files {
 		path := fs.Position(f.Package).Filename
 		if strings.HasSuffix(path, "_test.go") {
 			testFiles = append(testFiles, f)
@@ -105,38 +118,38 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				if strings.HasPrefix(name, ps) {
 					nameBody := strings.TrimPrefix(name, ps)
 					if decl, ok := declMap[pName][nameBody]; ok {
-						x := FuncData{
+						result = append(result, FuncData{
 							PackageName: pName,
 							FuncName:    nameBody,
 							testType:    i,
 							FuncDeclPos: decl.Pos(),
 							TestDeclPos: fd.Pos(),
 							CallPos:     callPosList(fd, info.Defs[decl.Name], info),
-						}
-						result = append(result, x)
-						s := fmt.Sprintf(
-							"{\n" +
-								"PackageName: %s\n" +
-								"FuncName: %s\n" +
-								"type: %s\n" +
-								"FuncDeclPos: %s,%d,%d\n" +
-								"TestDeclPos: %s,%d,%d\n" +
-								"CallPos: [",
-							x.PackageName, x.FuncName, x.Type(),
-							filepath.Base(fs.Position(x.FuncDeclPos).Filename), fs.Position(x.FuncDeclPos).Line, fs.Position(x.FuncDeclPos).Column,
-							filepath.Base(fs.Position(x.TestDeclPos).Filename), fs.Position(x.TestDeclPos).Line, fs.Position(x.TestDeclPos).Column,
-						)
-						for j, cp := range x.CallPos {
-							s += fmt.Sprintf("%s,%d,%d", filepath.Base(fs.Position(cp).Filename), fs.Position(cp).Line, fs.Position(cp).Column)
-							if j != len(x.CallPos) - 1 {
-								s += ", "
-							}
-						}
-						pass.Reportf(fd.Pos(), s + "]\n}")
+						})
 					}
 				}
 			}
 		}
+	}
+	return result, nil
+}
+
+func run(pass *analysis.Pass) (interface{}, error) {
+	fs := pass.Fset
+	cfg := &types.Config{Importer: importer.Default()}
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
+	_, err := cfg.Check("main", fs, pass.Files, info)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := getFuncData(fs, pass.Files, info)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, x := range result {
+		pass.Reportf(x.TestDeclPos, Format(x, fs))
 	}
 
 	return nil, nil
