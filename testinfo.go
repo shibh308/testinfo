@@ -37,17 +37,41 @@ func (x FuncData) Type () string {
 	return pref[x.testType]
 }
 
+type TestInfo struct {
+	Pass *analysis.Pass
+	FuncData []FuncData
+	DeclList map[string]map[string]*ast.FuncDecl
+	TestList map[string]map[string]*ast.FuncDecl
+}
+
+func New(pass *analysis.Pass) (TestInfo, error) {
+	ti := TestInfo{}
+	err := ti.getFuncData(pass)
+	if err != nil {
+		return ti, err
+	}
+	return ti, nil
+}
+
 func Format(x FuncData, fs *token.FileSet) string {
+
+	var fStr string
+	if x.FuncDeclPos == token.NoPos {
+		fStr = "FuncDeclPos:unknown"
+	} else {
+		fStr = fmt.Sprintf("FuncDeclPos:\"%s,%d,%d\"", filepath.Base(fs.Position(x.FuncDeclPos).Filename), fs.Position(x.FuncDeclPos).Line, fs.Position(x.FuncDeclPos).Column)
+	}
 	s := fmt.Sprintf(
 		"{" +
-			"PackageName:%s, " +
-			"type:%s, " +
-			"FuncName:%s, " +
-			"FuncDeclPos:\"%s,%d,%d\", " +
-			"TestDeclPos:\"%s,%d,%d\", " +
-			"CallPos:[",
-		x.PackageName, x.FuncName, x.Type(),
-		filepath.Base(fs.Position(x.FuncDeclPos).Filename), fs.Position(x.FuncDeclPos).Line, fs.Position(x.FuncDeclPos).Column,
+		strings.Join(
+			[]string{
+				"PackageName:%s",
+				"type:%s",
+				"FuncName:%s",
+				fStr,
+				"TestDeclPos:\"%s,%d,%d\"",
+				"CallPos:["}, ", "),
+		x.PackageName, x.Type(), x.FuncName,
 		filepath.Base(fs.Position(x.TestDeclPos).Filename), fs.Position(x.TestDeclPos).Line, fs.Position(x.TestDeclPos).Column,
 	)
 	for j, cp := range x.CallPos {
@@ -59,7 +83,7 @@ func Format(x FuncData, fs *token.FileSet) string {
 	return s + "]}"
 }
 
-func callPosList (n *ast.FuncDecl, target types.Object, info *types.Info) []token.Pos {
+func callPosList(n *ast.FuncDecl, target types.Object, info *types.Info) []token.Pos {
 	var result []token.Pos
 	ast.Inspect(n.Body, func(n ast.Node) bool {
 		id, ok := n.(*ast.Ident)
@@ -75,7 +99,7 @@ func callPosList (n *ast.FuncDecl, target types.Object, info *types.Info) []toke
 }
 
 
-func GetFuncData(pass *analysis.Pass) ([]FuncData, error) {
+func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 	fs := pass.Fset
 	files := pass.Files
 	info := pass.TypesInfo
@@ -90,6 +114,7 @@ func GetFuncData(pass *analysis.Pass) ([]FuncData, error) {
 		}
 	}
 	declMap := make(map[string]map[string]*ast.FuncDecl)
+	testMap := make(map[string]map[string]*ast.FuncDecl)
 	for _, f := range mainFiles {
 		pName := f.Name.String()
 		for _, decl := range f.Decls {
@@ -105,7 +130,7 @@ func GetFuncData(pass *analysis.Pass) ([]FuncData, error) {
 		}
 	}
 
-	var result []FuncData
+	var funcData []FuncData
 
 	for _, f := range testFiles {
 		pName := strings.TrimSuffix(f.Name.String(), "_test")
@@ -122,7 +147,11 @@ func GetFuncData(pass *analysis.Pass) ([]FuncData, error) {
 				if strings.HasPrefix(name, ps) {
 					nameBody := strings.TrimPrefix(name, ps)
 					if decl, ok := declMap[pName][strings.ToLower(nameBody)]; ok {
-						result = append(result, FuncData{
+						if _, ok := testMap[pName]; !ok {
+							testMap[pName] = make(map[string]*ast.FuncDecl)
+						}
+						testMap[pName][strings.ToLower(nameBody)] = fd
+						funcData = append(funcData, FuncData{
 							PackageName: pName,
 							FuncName:    nameBody,
 							testType:    i,
@@ -130,21 +159,39 @@ func GetFuncData(pass *analysis.Pass) ([]FuncData, error) {
 							TestDeclPos: fd.Pos(),
 							CallPos:     callPosList(fd, info.Defs[decl.Name], info),
 						})
+					} else {
+						funcData = append(funcData, FuncData{
+							PackageName: pName,
+							FuncName:    nameBody,
+							testType:    i,
+							FuncDeclPos: token.NoPos,
+							TestDeclPos: fd.Pos(),
+							CallPos:     nil,
+						})
 					}
 				}
 			}
 		}
 	}
-	return result, nil
+	testInfo.FuncData = funcData
+	testInfo.DeclList = declMap
+	testInfo.TestList = testMap
+	return nil
+}
+
+// Posが渡された時に対応する物を返す
+func (testInfo *TestInfo) getCursorFuncData(pos token.Pos) (FuncData, bool) {
+	return FuncData{}, false
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	result, err := GetFuncData(pass)
+
+	testInfo, err := New(pass)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, x := range result {
+	for _, x := range testInfo.FuncData {
 		pass.Reportf(x.TestDeclPos, Format(x, pass.Fset))
 	}
 
