@@ -3,7 +3,6 @@ package testinfo
 import (
 	"fmt"
 	"go/ast"
-	"go/importer"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/analysis"
@@ -42,8 +41,8 @@ func Format(x FuncData, fs *token.FileSet) string {
 	s := fmt.Sprintf(
 		"{" +
 			"PackageName:%s, " +
-			"FuncName:%s, " +
 			"type:%s, " +
+			"FuncName:%s, " +
 			"FuncDeclPos:\"%s,%d,%d\", " +
 			"TestDeclPos:\"%s,%d,%d\", " +
 			"CallPos:[",
@@ -75,7 +74,12 @@ func callPosList (n *ast.FuncDecl, target types.Object, info *types.Info) []toke
 	return result
 }
 
-func getFuncData(fs *token.FileSet, files []*ast.File, info *types.Info) ([]FuncData, error) {
+
+func GetFuncData(pass *analysis.Pass) ([]FuncData, error) {
+	fs := pass.Fset
+	files := pass.Files
+	info := pass.TypesInfo
+
 	var mainFiles, testFiles []*ast.File
 	for _, f := range files {
 		path := fs.Position(f.Package).Filename
@@ -93,7 +97,7 @@ func getFuncData(fs *token.FileSet, files []*ast.File, info *types.Info) ([]Func
 			if !ok {
 				continue
 			}
-			fName := fd.Name.String()
+			fName := strings.ToLower(fd.Name.String())
 			if _, exists := declMap[pName]; !exists {
 				declMap[pName] = make(map[string]*ast.FuncDecl)
 			}
@@ -117,7 +121,7 @@ func getFuncData(fs *token.FileSet, files []*ast.File, info *types.Info) ([]Func
 			for i, ps := range pref {
 				if strings.HasPrefix(name, ps) {
 					nameBody := strings.TrimPrefix(name, ps)
-					if decl, ok := declMap[pName][nameBody]; ok {
+					if decl, ok := declMap[pName][strings.ToLower(nameBody)]; ok {
 						result = append(result, FuncData{
 							PackageName: pName,
 							FuncName:    nameBody,
@@ -135,21 +139,13 @@ func getFuncData(fs *token.FileSet, files []*ast.File, info *types.Info) ([]Func
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	fs := pass.Fset
-	cfg := &types.Config{Importer: importer.Default()}
-	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
-	_, err := cfg.Check("main", fs, pass.Files, info)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := getFuncData(fs, pass.Files, info)
+	result, err := GetFuncData(pass)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, x := range result {
-		pass.Reportf(x.TestDeclPos, Format(x, fs))
+		pass.Reportf(x.TestDeclPos, Format(x, pass.Fset))
 	}
 
 	return nil, nil
