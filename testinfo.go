@@ -28,7 +28,7 @@ type FuncData struct {
 	PackageName string
 	FuncName    string
 	testType    int
-	FuncDecl    *ast.FuncDecl
+	FuncObj     types.Object
 	TestDecl    *ast.FuncDecl
 	CallPos     []token.Pos
 }
@@ -56,10 +56,10 @@ func New(pass *analysis.Pass) (TestInfo, error) {
 func Format(x FuncData, fs *token.FileSet) string {
 
 	var fStr string
-	if x.FuncDecl == nil {
+	if x.FuncObj == nil {
 		fStr = "FuncDeclPos:unknown"
 	} else {
-		fStr = fmt.Sprintf("FuncDeclPos:\"%s,%d,%d\"", filepath.Base(fs.Position(x.FuncDecl.Pos()).Filename), fs.Position(x.FuncDecl.Pos()).Line, fs.Position(x.FuncDecl.Pos()).Column)
+		fStr = fmt.Sprintf("FuncObjPos:\"%s,%d,%d\"", filepath.Base(fs.Position(x.FuncObj.Pos()).Filename), fs.Position(x.FuncObj.Pos()).Line, fs.Position(x.FuncObj.Pos()).Column)
 	}
 	s := fmt.Sprintf(
 		"{" +
@@ -102,6 +102,7 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 	fs := pass.Fset
 	files := pass.Files
 	info := pass.TypesInfo
+	pName := strings.TrimSuffix(pass.Pkg.Name(), "_test")
 
 	var mainFiles, testFiles []*ast.File
 	for _, f := range files {
@@ -113,8 +114,10 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 		}
 	}
 
-	declMap := make(map[string]map[string]*ast.FuncDecl)
 	testMap := make(map[string]map[string]*ast.FuncDecl)
+
+	/*
+	declMap := make(map[string]map[string]*ast.FuncDecl)
 	for _, f := range mainFiles {
 		pName := f.Name.String()
 		for _, decl := range f.Decls {
@@ -129,14 +132,16 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 			declMap[pName][fName] = fd
 		}
 	}
+	 */
 
 	var funcData []FuncData
 
 	for _, f := range testFiles {
-		pName := strings.TrimSuffix(f.Name.String(), "_test")
+		/*
 		if _, ok := declMap[pName]; !ok {
 			continue
 		}
+		 */
 		for _, decl := range f.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok {
@@ -146,7 +151,20 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 			for i, ps := range pref {
 				if strings.HasPrefix(name, ps) {
 					nameBody := strings.TrimPrefix(name, ps)
-					if decl, ok := declMap[pName][strings.ToLower(nameBody)]; ok {
+
+					obj := pass.Pkg.Scope().Lookup(nameBody)
+					if obj == nil {
+						lower := strings.ToLower(string(nameBody[0]))+nameBody[1:]
+						obj = pass.Pkg.Scope().Lookup(lower)
+					}
+					for _, pkg := range pass.Pkg.Imports() {
+						if pkg.Name() == pName {
+							obj = pkg.Scope().Lookup(nameBody)
+						}
+					}
+
+					_, _ = info, i
+					if obj != nil {
 						if _, ok := testMap[pName]; !ok {
 							testMap[pName] = make(map[string]*ast.FuncDecl)
 						}
@@ -155,18 +173,19 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 							PackageName: pName,
 							FuncName:    nameBody,
 							testType:    i,
-							FuncDecl: decl,
+							FuncObj: obj,
 							TestDecl: fd,
-							CallPos:     callPosList(fd, info.Defs[decl.Name], info),
+							CallPos:     callPosList(fd, obj, info),
+							// CallPos:     callPosList(fd, info.Defs[decl.Name], info),
 						})
 					} else {
 						funcData = append(funcData, FuncData{
 							PackageName: pName,
 							FuncName:    nameBody,
 							testType:    i,
-							FuncDecl: nil,
+							FuncObj: nil,
 							TestDecl: fd,
-							CallPos:     nil,
+							CallPos:  nil,
 						})
 					}
 				}
@@ -174,7 +193,7 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 		}
 	}
 	testInfo.FuncData = funcData
-	testInfo.DeclList = declMap
+	// testInfo.DeclList = declMap
 	testInfo.TestList = testMap
 	return nil
 }
@@ -182,9 +201,11 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 // Posが渡された時に対応する物を返す
 func (testInfo *TestInfo) GetCursorFuncData(pos token.Pos) *FuncData {
 	for _, x := range testInfo.FuncData {
-		if scope, ok := testInfo.Pass.TypesInfo.Scopes[x.FuncDecl]; ok && scope.Contains(pos) {
+		/*
+		if scope, ok := testInfo.Pass.TypesInfo.Scopes[x.FuncObj.]; ok && scope.Contains(pos) {
 			return &x
 		}
+		 */
 		if scope, ok := testInfo.Pass.TypesInfo.Scopes[x.TestDecl]; ok && scope.Contains(pos) {
 			return &x
 		}
