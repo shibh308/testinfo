@@ -25,7 +25,6 @@ var Analyzer = &analysis.Analyzer{
 
 var pref = [...]string {"Test", "Benchmark", "Example"}
 type FuncData struct {
-	PackageName string
 	FuncName    string
 	testType    int
 	FuncObj     types.Object
@@ -40,8 +39,6 @@ func (x FuncData) Type () string {
 type TestInfo struct {
 	Pass *analysis.Pass
 	FuncData []FuncData
-	DeclList map[string]map[string]*ast.FuncDecl
-	TestList map[string]map[string]*ast.FuncDecl
 }
 
 func New(pass *analysis.Pass) (TestInfo, error) {
@@ -53,29 +50,35 @@ func New(pass *analysis.Pass) (TestInfo, error) {
 	return ti, nil
 }
 
-func Format(x FuncData, fs *token.FileSet) string {
-
-	var fStr string
-	if x.FuncObj == nil {
-		fStr = "FuncDeclPos:unknown"
-	} else {
-		fStr = fmt.Sprintf("FuncObjPos:\"%s,%d,%d\"", filepath.Base(fs.Position(x.FuncObj.Pos()).Filename), fs.Position(x.FuncObj.Pos()).Line, fs.Position(x.FuncObj.Pos()).Column)
+func (t *TestInfo) FormatObj(x types.Object) string {
+	if x == nil {
+		return "unknown"
 	}
+	fs := t.Pass.Fset
+	p := fs.Position(x.Pos())
+	s := fmt.Sprintf("\"%s:%s:%d:%d %s\"", x.Pkg().Name(), filepath.Base(p.Filename), p.Line, p.Column, x.Name())
+	return s
+}
+
+func (t *TestInfo) Format(x FuncData) string {
+	testObj := t.Pass.TypesInfo.ObjectOf(x.TestDecl.Name)
+
 	s := fmt.Sprintf(
 		"{" +
 		strings.Join(
 			[]string{
-				"PackageName:%s",
 				"type:%s",
-				"FuncName:%s",
-				fStr,
-				"TestDeclPos:\"%s,%d,%d\"",
-				"CallPos:["}, ", "),
-		x.PackageName, x.Type(), x.FuncName,
-		filepath.Base(fs.Position(x.TestDecl.Pos()).Filename), fs.Position(x.TestDecl.Pos()).Line, fs.Position(x.TestDecl.Pos()).Column,
-	)
+				"testFunc:%s",
+				"targetFunc:%s",
+				"CallPos:["},
+				", "),
+		x.Type(),
+		t.FormatObj(testObj),
+		t.FormatObj(x.FuncObj))
+
 	for j, cp := range x.CallPos {
-		s += fmt.Sprintf("\"%s,%d,%d\"", filepath.Base(fs.Position(cp).Filename), fs.Position(cp).Line, fs.Position(cp).Column)
+		p := t.Pass.Fset.Position(cp)
+		s += fmt.Sprintf("\"%d:%d\"", p.Line, p.Column)
 		if j != len(x.CallPos) - 1 {
 			s += ", "
 		}
@@ -84,6 +87,9 @@ func Format(x FuncData, fs *token.FileSet) string {
 }
 
 func callPosList(n *ast.FuncDecl, target types.Object, info *types.Info) []token.Pos {
+	if target == nil {
+		return nil
+	}
 	var result []token.Pos
 	ast.Inspect(n.Body, func(n ast.Node) bool {
 		id, ok := n.(*ast.Ident)
@@ -98,11 +104,29 @@ func callPosList(n *ast.FuncDecl, target types.Object, info *types.Info) []token
 	return result
 }
 
+func getFuncObj(pkg *types.Package, name string) types.Object {
+	pName := strings.TrimSuffix(pkg.Name(), "_test")
+	if obj := pkg.Scope().Lookup(name); obj != nil {
+		return obj
+	}
+	lower := strings.ToLower(string(name[0]))+name[1:]
+	if obj := pkg.Scope().Lookup(lower); obj != nil {
+		return obj
+	}
+	for _, imp := range pkg.Imports() {
+		if imp.Name() == pName {
+			if obj := imp.Scope().Lookup(name); obj != nil {
+				return obj
+			}
+		}
+	}
+	return nil
+}
+
 func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 	fs := pass.Fset
 	files := pass.Files
 	info := pass.TypesInfo
-	pName := strings.TrimSuffix(pass.Pkg.Name(), "_test")
 
 	var mainFiles, testFiles []*ast.File
 	for _, f := range files {
@@ -114,34 +138,9 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 		}
 	}
 
-	testMap := make(map[string]map[string]*ast.FuncDecl)
-
-	/*
-	declMap := make(map[string]map[string]*ast.FuncDecl)
-	for _, f := range mainFiles {
-		pName := f.Name.String()
-		for _, decl := range f.Decls {
-			fd, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			fName := strings.ToLower(fd.Name.String())
-			if _, exists := declMap[pName]; !exists {
-				declMap[pName] = make(map[string]*ast.FuncDecl)
-			}
-			declMap[pName][fName] = fd
-		}
-	}
-	 */
-
 	var funcData []FuncData
 
 	for _, f := range testFiles {
-		/*
-		if _, ok := declMap[pName]; !ok {
-			continue
-		}
-		 */
 		for _, decl := range f.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok {
@@ -151,61 +150,25 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 			for i, ps := range pref {
 				if strings.HasPrefix(name, ps) {
 					nameBody := strings.TrimPrefix(name, ps)
-
-					obj := pass.Pkg.Scope().Lookup(nameBody)
-					if obj == nil {
-						lower := strings.ToLower(string(nameBody[0]))+nameBody[1:]
-						obj = pass.Pkg.Scope().Lookup(lower)
-					}
-					for _, pkg := range pass.Pkg.Imports() {
-						if pkg.Name() == pName {
-							obj = pkg.Scope().Lookup(nameBody)
-						}
-					}
-
-					_, _ = info, i
-					if obj != nil {
-						if _, ok := testMap[pName]; !ok {
-							testMap[pName] = make(map[string]*ast.FuncDecl)
-						}
-						testMap[pName][strings.ToLower(nameBody)] = fd
-						funcData = append(funcData, FuncData{
-							PackageName: pName,
-							FuncName:    nameBody,
-							testType:    i,
-							FuncObj: obj,
-							TestDecl: fd,
-							CallPos:     callPosList(fd, obj, info),
-							// CallPos:     callPosList(fd, info.Defs[decl.Name], info),
-						})
-					} else {
-						funcData = append(funcData, FuncData{
-							PackageName: pName,
-							FuncName:    nameBody,
-							testType:    i,
-							FuncObj: nil,
-							TestDecl: fd,
-							CallPos:  nil,
-						})
-					}
+					obj := getFuncObj(pass.Pkg, nameBody)
+					funcData = append(funcData, FuncData{
+						FuncName:    nameBody,
+						testType:    i,
+						FuncObj: obj,
+						TestDecl: fd,
+						CallPos:     callPosList(fd, obj, info),
+					})
 				}
 			}
 		}
 	}
 	testInfo.FuncData = funcData
-	// testInfo.DeclList = declMap
-	testInfo.TestList = testMap
 	return nil
 }
 
 // Posが渡された時に対応する物を返す
-func (testInfo *TestInfo) GetCursorFuncData(pos token.Pos) *FuncData {
+func (testInfo *TestInfo) CursorTestFuncData(pos token.Pos) *FuncData {
 	for _, x := range testInfo.FuncData {
-		/*
-		if scope, ok := testInfo.Pass.TypesInfo.Scopes[x.FuncObj.]; ok && scope.Contains(pos) {
-			return &x
-		}
-		 */
 		if scope, ok := testInfo.Pass.TypesInfo.Scopes[x.TestDecl]; ok && scope.Contains(pos) {
 			return &x
 		}
@@ -221,7 +184,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	for _, x := range testInfo.FuncData {
-		pass.Reportf(x.TestDecl.Pos(), Format(x, pass.Fset))
+		pass.Reportf(x.TestDecl.Pos(), testInfo.Format(x))
 	}
 
 	return nil, nil
