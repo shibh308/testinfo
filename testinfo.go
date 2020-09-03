@@ -1,3 +1,4 @@
+// testinfo shows the location of test function, target function data, and additional information.
 package testinfo
 
 import (
@@ -13,7 +14,6 @@ import (
 
 const doc = "testinfo is ..."
 
-// Analyzer is ...
 var Analyzer = &analysis.Analyzer{
 	Name: "testinfo",
 	Doc:  doc,
@@ -24,6 +24,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 var pref = [...]string {"Test", "Benchmark", "Example"}
+
 type FuncData struct {
 	testType    int
 	FuncObj     types.Object
@@ -31,6 +32,7 @@ type FuncData struct {
 	CallPos     []token.Pos
 }
 
+// test function type (one of the {"Test", "Benchmark", "Example"})
 func (x FuncData) Type () string {
 	return pref[x.testType]
 }
@@ -49,6 +51,7 @@ func New(pass *analysis.Pass, filter func(string) bool) (TestInfo, error) {
 	return ti, nil
 }
 
+// instead of String()
 func (t *TestInfo) FormatObj(x types.Object) string {
 	if x == nil {
 		return "unknown"
@@ -59,6 +62,7 @@ func (t *TestInfo) FormatObj(x types.Object) string {
 	return s
 }
 
+// instead of String()
 func (t *TestInfo) Format(x FuncData) string {
 	testObj := t.Pass.TypesInfo.ObjectOf(x.TestDecl.Name)
 
@@ -170,7 +174,7 @@ func (t *TestInfo) getFuncData(pass *analysis.Pass, filter func(string) bool) er
 	return nil
 }
 
-// Posが渡された時に対応する物を返す
+// returns the function which contains cursor
 func (t *TestInfo) GetFuncDataFromCursor(pos token.Pos) *FuncData {
 	for _, x := range t.FuncData {
 		if scope, ok := t.Pass.TypesInfo.Scopes[x.TestDecl]; ok && scope.Contains(pos) {
@@ -180,7 +184,7 @@ func (t *TestInfo) GetFuncDataFromCursor(pos token.Pos) *FuncData {
 	return nil
 }
 
-// Posが渡された時に対応する物を返す
+// returns the function which name is funcName
 func (t *TestInfo) GetFuncDataFromName(funcName string) *FuncData {
 	for _, x := range t.FuncData {
 		if x.TestDecl.Name.Name == funcName {
@@ -194,6 +198,7 @@ var flags struct {
 	funcName string
 	fileName string
 }
+
 func init() {
 	Analyzer.Flags.StringVar(&flags.funcName, "testfunc", flags.funcName, "test function name")
 	Analyzer.Flags.StringVar(&flags.fileName, "testfile", flags.fileName, "target testfile name")
