@@ -123,7 +123,7 @@ func getFuncObj(pkg *types.Package, name string) types.Object {
 	return nil
 }
 
-func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
+func (t *TestInfo) getFuncData(pass *analysis.Pass) error {
 	fs := pass.Fset
 	files := pass.Files
 	info := pass.TypesInfo
@@ -162,14 +162,14 @@ func (testInfo *TestInfo) getFuncData(pass *analysis.Pass) error {
 			}
 		}
 	}
-	testInfo.FuncData = funcData
+	t.FuncData = funcData
 	return nil
 }
 
 // Posが渡された時に対応する物を返す
-func (testInfo *TestInfo) CursorTestFuncData(pos token.Pos) *FuncData {
-	for _, x := range testInfo.FuncData {
-		if scope, ok := testInfo.Pass.TypesInfo.Scopes[x.TestDecl]; ok && scope.Contains(pos) {
+func (t *TestInfo) CursorTestFuncData(pos token.Pos) *FuncData {
+	for _, x := range t.FuncData {
+		if scope, ok := t.Pass.TypesInfo.Scopes[x.TestDecl]; ok && scope.Contains(pos) {
 			return &x
 		}
 	}
