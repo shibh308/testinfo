@@ -103,18 +103,26 @@ func callPosList(n *ast.FuncDecl, target types.Object, info *types.Info) []token
 	return result
 }
 
+func objFuncCheck(obj types.Object) bool {
+	if obj == nil {
+		return false
+	}
+	_, ok := obj.(*types.Func)
+	return ok
+}
+
 func getFuncObj(pkg *types.Package, name string) types.Object {
 	pName := strings.TrimSuffix(pkg.Name(), "_test")
-	if obj := pkg.Scope().Lookup(name); obj != nil {
+	if obj := pkg.Scope().Lookup(name); objFuncCheck(obj) {
 		return obj
 	}
 	lower := strings.ToLower(string(name[0]))+name[1:]
-	if obj := pkg.Scope().Lookup(lower); obj != nil {
+	if obj := pkg.Scope().Lookup(lower); objFuncCheck(obj) {
 		return obj
 	}
 	for _, imp := range pkg.Imports() {
 		if imp.Name() == pName {
-			if obj := imp.Scope().Lookup(name); obj != nil {
+			if obj := imp.Scope().Lookup(name); objFuncCheck(obj) {
 				return obj
 			}
 		}
