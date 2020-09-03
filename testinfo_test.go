@@ -13,3 +13,9 @@ func TestAnalyzer(t *testing.T) {
 	analysistest.Run(t, testdata, testinfo.Analyzer, "a/test", "a/body")
 }
 
+// TestAnalyzer is a test for Analyzer with flag.
+func TestAnalyzerWithFlag(t *testing.T) {
+	testdata := analysistest.TestData()
+	defer testinfo.ExportSetFuncNameFlag("TestF2")()
+	analysistest.Run(t, testdata, testinfo.Analyzer, "b")
+}

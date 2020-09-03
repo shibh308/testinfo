@@ -184,6 +184,11 @@ func (t *TestInfo) GetFuncDataFromName(funcName string) *FuncData {
 	return nil
 }
 
+var funcName string
+func init() {
+	Analyzer.Flags.StringVar(&funcName, "testfunc", funcName, "test function name")
+}
+
 func run(pass *analysis.Pass) (interface{}, error) {
 
 	testInfo, err := New(pass)
@@ -191,8 +196,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		return nil, err
 	}
 
-	for _, x := range testInfo.FuncData {
-		pass.Reportf(x.TestDecl.Pos(), testInfo.Format(x))
+	if funcName == "" {
+		for _, x := range testInfo.FuncData {
+			pass.Reportf(x.TestDecl.Pos(), testInfo.Format(x))
+		}
+	} else {
+		x := testInfo.GetFuncDataFromName(funcName)
+		if x != nil {
+			pass.Reportf(x.TestDecl.Pos(), testInfo.Format(*x))
+		}
 	}
 
 	return nil, nil
