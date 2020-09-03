@@ -165,9 +165,19 @@ func (t *TestInfo) getFuncData(pass *analysis.Pass) error {
 }
 
 // Posが渡された時に対応する物を返す
-func (t *TestInfo) CursorTestFuncData(pos token.Pos) *FuncData {
+func (t *TestInfo) GetFuncDataFromCursor(pos token.Pos) *FuncData {
 	for _, x := range t.FuncData {
 		if scope, ok := t.Pass.TypesInfo.Scopes[x.TestDecl]; ok && scope.Contains(pos) {
+			return &x
+		}
+	}
+	return nil
+}
+
+// Posが渡された時に対応する物を返す
+func (t *TestInfo) GetFuncDataFromName(funcName string) *FuncData {
+	for _, x := range t.FuncData {
+		if x.TestDecl.Name.Name == funcName {
 			return &x
 		}
 	}
