@@ -40,9 +40,9 @@ type TestInfo struct {
 	FuncData []FuncData
 }
 
-func New(pass *analysis.Pass) (TestInfo, error) {
+func New(pass *analysis.Pass, filter func(string) bool) (TestInfo, error) {
 	ti := TestInfo{Pass: pass}
-	err := ti.getFuncData(pass)
+	err := ti.getFuncData(pass, filter)
 	if err != nil {
 		return ti, err
 	}
@@ -130,24 +130,19 @@ func getFuncObj(pkg *types.Package, name string) types.Object {
 	return nil
 }
 
-func (t *TestInfo) getFuncData(pass *analysis.Pass) error {
+func (t *TestInfo) getFuncData(pass *analysis.Pass, filter func(string) bool) error {
 	fs := pass.Fset
 	files := pass.Files
 	info := pass.TypesInfo
 
-	var mainFiles, testFiles []*ast.File
-	for _, f := range files {
-		path := fs.Position(f.Package).Filename
-		if strings.HasSuffix(path, "_test.go") {
-			testFiles = append(testFiles, f)
-		} else {
-			mainFiles = append(mainFiles, f)
-		}
-	}
-
 	var funcData []FuncData
 
-	for _, f := range testFiles {
+	for _, f := range files {
+		path := fs.Position(f.Name.Pos()).Filename
+		if !strings.HasSuffix(path, "_test.go") || !filter(path) {
+			continue
+		}
+		fmt.Println(path)
 		for _, decl := range f.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok {
@@ -157,6 +152,9 @@ func (t *TestInfo) getFuncData(pass *analysis.Pass) error {
 			for i, ps := range pref {
 				if strings.HasPrefix(name, ps) {
 					nameBody := strings.TrimPrefix(name, ps)
+					if nameBody[0] == '_' {
+						nameBody = nameBody[1:]
+					}
 					obj := getFuncObj(pass.Pkg, nameBody)
 					funcData = append(funcData, FuncData{
 						testType:    i,
@@ -192,26 +190,35 @@ func (t *TestInfo) GetFuncDataFromName(funcName string) *FuncData {
 	return nil
 }
 
-var funcName string
+var flags struct {
+	funcName string
+	fileName string
+}
 func init() {
-	Analyzer.Flags.StringVar(&funcName, "testfunc", funcName, "test function name")
+	Analyzer.Flags.StringVar(&flags.funcName, "testfunc", flags.funcName, "test function name")
+	Analyzer.Flags.StringVar(&flags.fileName, "testfile", flags.fileName, "target testfile name")
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 
-	testInfo, err := New(pass)
+	filterFunc := func(path string) bool{return true}
+	if flags.fileName != "" {
+		filterFunc = func(path string) bool{return strings.HasPrefix(filepath.Base(path), flags.fileName)}
+	}
+	testInfo, err := New(pass, filterFunc)
+
 	if err != nil {
 		return nil, err
 	}
 
-	if funcName == "" {
-		for _, x := range testInfo.FuncData {
-			pass.Reportf(x.TestDecl.Pos(), testInfo.Format(x))
-		}
-	} else {
-		x := testInfo.GetFuncDataFromName(funcName)
+	if flags.funcName != "" {
+		x := testInfo.GetFuncDataFromName(flags.funcName)
 		if x != nil {
 			pass.Reportf(x.TestDecl.Pos(), testInfo.Format(*x))
+		}
+	} else {
+		for _, x := range testInfo.FuncData {
+			pass.Reportf(x.TestDecl.Pos(), testInfo.Format(x))
 		}
 	}
 

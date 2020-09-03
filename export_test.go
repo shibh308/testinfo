@@ -1,9 +1,17 @@
 package testinfo
 
 func ExportSetFuncNameFlag(s string) func() {
-	old := funcName
-	funcName = s
+	old := flags.funcName
+	flags.funcName = s
 	return func(){
-		funcName = old
+		flags.funcName = old
+	}
+}
+
+func ExportSetFileNameFlag(s string) func() {
+	old := flags.fileName
+	flags.fileName = s
+	return func(){
+		flags.fileName = old
 	}
 }
