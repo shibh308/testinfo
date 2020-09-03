@@ -3,8 +3,8 @@ package testinfo_test
 import (
 	"testing"
 
+	"github.com/shibh308/testinfo"
 	"golang.org/x/tools/go/analysis/analysistest"
-	"testinfo"
 )
 
 // TestAnalyzer is a test for Analyzer.

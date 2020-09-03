@@ -1,4 +1,4 @@
-module testinfo
+module github.com/shibh308/testinfo
 
 go 1.14
 

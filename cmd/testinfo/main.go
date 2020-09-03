@@ -1,8 +1,8 @@
 package main
 
 import (
+	"github.com/shibh308/testinfo"
 	"golang.org/x/tools/go/analysis/unitchecker"
-	"testinfo"
 )
 
 func main() {
