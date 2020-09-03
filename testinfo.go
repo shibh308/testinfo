@@ -25,7 +25,6 @@ var Analyzer = &analysis.Analyzer{
 
 var pref = [...]string {"Test", "Benchmark", "Example"}
 type FuncData struct {
-	FuncName    string
 	testType    int
 	FuncObj     types.Object
 	TestDecl    *ast.FuncDecl
@@ -152,7 +151,6 @@ func (t *TestInfo) getFuncData(pass *analysis.Pass) error {
 					nameBody := strings.TrimPrefix(name, ps)
 					obj := getFuncObj(pass.Pkg, nameBody)
 					funcData = append(funcData, FuncData{
-						FuncName:    nameBody,
 						testType:    i,
 						FuncObj: obj,
 						TestDecl: fd,
