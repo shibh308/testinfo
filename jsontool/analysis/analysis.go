@@ -27,15 +27,15 @@ type TestFuncData struct {
 type MainFuncJson struct {
 	Type       string
 	TargetFunc FuncData
-	TestFunc   *TestFuncData
+	TestFunc   *TestFuncData `json:"TestFunc,omitempty"`
 }
 
 // testにいる時に返したい値
 type TestFuncJson struct {
 	Type        string
 	TestFunc    TestFuncData
-	TargetFunc  *FuncData
-	SubTestName []string
+	TargetFunc  *FuncData `json:"TargetFunc,omitempty"`
+	SubTestName []string  `json:"SubTestName,omitempty"`
 }
 
 type Analysis struct {

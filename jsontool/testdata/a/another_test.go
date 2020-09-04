@@ -30,3 +30,6 @@ func Test_B(t *testing.T) {
 		})
 	}
 }
+
+func TestY(t *testing.T) {
+}
