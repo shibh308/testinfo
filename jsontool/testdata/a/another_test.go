@@ -20,7 +20,7 @@ func Test_B(t *testing.T) {
 		out  int
 	}{
 		{"case1", 5, 25},
-		{"case1", 2, 10},
+		{"case2", 2, 10},
 	}
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {

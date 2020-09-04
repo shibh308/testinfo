@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -35,7 +36,7 @@ type TestFuncJson struct {
 	Type        string
 	TestFunc    TestFuncData
 	TargetFunc  *FuncData `json:"TargetFunc,omitempty"`
-	SubTestName []string  `json:"SubTestName,omitempty"`
+	SubTestName *string   `json:"SubTestName,omitempty"`
 }
 
 type Analysis struct {
@@ -168,6 +169,64 @@ func (a *Analysis) getFuncObj(pkg *types.Package, name string) types.Object {
 	return nil
 }
 
+func (a *Analysis) rhsCheck(rhs ast.Expr) string {
+	cl, ok := rhs.(*ast.CompositeLit)
+	if !ok {
+		return ""
+	}
+	for _, elt := range cl.Elts {
+		if !a.containCheck(elt) {
+			continue
+		}
+		if cp, ok := elt.(*ast.CompositeLit); ok {
+			if bl, ok := cp.Elts[0].(*ast.BasicLit); ok && bl.Kind == token.STRING {
+				s, err := strconv.Unquote(bl.Value)
+				if err != nil {
+					return ""
+				}
+				return s
+			}
+		}
+		if kv, ok := elt.(*ast.KeyValueExpr); ok {
+			if bl, ok := kv.Key.(*ast.BasicLit); ok && bl.Kind == token.STRING {
+				p := a.fs.Position(bl.Pos())
+				fmt.Println(p.Line, p.Column, p.Offset)
+				s, err := strconv.Unquote(bl.Value)
+				if err != nil {
+					return ""
+				}
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func (a *Analysis) getSubTest(n ast.Node) *string {
+	var res *string
+	ast.Inspect(n, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		if !a.containCheck(n) {
+			return false
+		}
+		stmt, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, rhs := range stmt.Rhs {
+			s := a.rhsCheck(rhs)
+			if s != "" {
+				res = &s
+				return true
+			}
+		}
+		return true
+	})
+	return res
+}
+
 func (a *Analysis) GetFuncData() (interface{}, error) {
 
 	pkg := a.pkgs[a.pkgIdx]
@@ -195,7 +254,7 @@ func (a *Analysis) GetFuncData() (interface{}, error) {
 		testFuncData := TestFuncData{a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), pref[ty]}
 		obj := a.getFuncObj(pkg.Types, funcName)
 		if obj == nil {
-			return &TestFuncJson{"test", testFuncData, nil, nil}, nil
+			return &TestFuncJson{"test", testFuncData, nil, a.getSubTest(fd)}, nil
 		}
 		objPos := a.fs.Position(obj.Pos())
 		objFuncData := FuncData{
@@ -204,7 +263,7 @@ func (a *Analysis) GetFuncData() (interface{}, error) {
 			obj.Name(),
 			objPos.Offset,
 		}
-		fp := TestFuncJson{"test", testFuncData, &objFuncData, nil} // TODO
+		fp := TestFuncJson{"test", testFuncData, &objFuncData, a.getSubTest(fd)}
 		return fp, nil
 	} else {
 		mainFuncData := a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd)

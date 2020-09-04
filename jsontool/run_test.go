@@ -17,10 +17,10 @@ func TestRun(t *testing.T) {
 		{"a_A", "./testdata/a/a.go", 110},
 		{"a_B", "./testdata/a/a.go", 130},
 		{"a_X", "./testdata/a/a.go", 170},
-		{"a_testF", "./testdata/a/a_test.go", 320},
-		{"a_testG", "./testdata/a/a_test.go", 30},
+		{"a_testF", "./testdata/a/a_test.go", 400},
+		{"a_testG", "./testdata/a/a_test.go", 140},
 		{"a_testA", "./testdata/a/another_test.go", 110},
-		{"a_testB", "./testdata/a/another_test.go", 250},
+		{"a_testB", "./testdata/a/another_test.go", 280},
 		{"a_testY", "./testdata/a/another_test.go", 530},
 	}
 	for _, c := range cases {
