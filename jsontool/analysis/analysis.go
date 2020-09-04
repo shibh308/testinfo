@@ -13,7 +13,7 @@ import (
 
 type FuncData struct {
 	Package  string
-	FileName string
+	FilePath string
 	FuncName string
 	Offset   int
 }
@@ -187,11 +187,15 @@ func (a *Analysis) GetFuncData() (interface{}, error) {
 		}
 	}
 
+	if funcName[0] == '_' {
+		funcName = funcName[1:]
+	}
+
 	if ty != -1 {
 		testFuncData := TestFuncData{a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), pref[ty]}
 		obj := a.getFuncObj(pkg.Types, funcName)
 		if obj == nil {
-			return nil, nil
+			return &TestFuncJson{"test", testFuncData, nil, nil}, nil
 		}
 		objPos := a.fs.Position(obj.Pos())
 		objFuncData := FuncData{

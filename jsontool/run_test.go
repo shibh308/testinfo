@@ -13,9 +13,14 @@ func TestRun(t *testing.T) {
 		Pos  int
 		Want int
 	}{
-		{"sample1", "./run.go", 400, 10},
-		{"sample2", "./run.go", 500, 10},
-		{"sample3", "./run_test.go", 400, 10},
+		{"a_f", "./testdata/a/a.go", 40, 10},
+		{"a_G", "./testdata/a/a.go", 80, 10},
+		{"a_A", "./testdata/a/a.go", 110, 10},
+		{"a_B", "./testdata/a/a.go", 130, 10},
+		{"a_testF", "./testdata/a/a_test.go", 320, 10},
+		{"a_testG", "./testdata/a/a_test.go", 30, 10},
+		{"a_testA", "./testdata/a/another_test.go", 110, 10},
+		{"a_testB", "./testdata/a/another_test.go", 250, 10},
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
