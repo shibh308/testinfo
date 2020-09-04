@@ -27,14 +27,14 @@ type TestFuncData struct {
 type MainFuncJson struct {
 	Type       string
 	TargetFunc FuncData
-	TestFunc   []TestFuncData
+	TestFunc   *TestFuncData
 }
 
 // testにいる時に返したい値
 type TestFuncJson struct {
 	Type        string
 	TestFunc    TestFuncData
-	TargetFunc  FuncData
+	TargetFunc  *FuncData
 	SubTestName []string
 }
 
@@ -130,20 +130,15 @@ func (a *Analysis) getCursorFunc(fn *ast.File) *ast.FuncDecl {
 
 var pref = [...]string{"Test", "Benchmark", "Example"}
 
-func (a *Analysis) getTestFunc(fn *ast.File, name string) ([]*ast.FuncDecl, []int) {
-	var fdList []*ast.FuncDecl
-	var tyList []int
+func (a *Analysis) getTestFunc(fn *ast.File, name, pre string) *ast.FuncDecl {
 	for _, decl := range fn.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
-			for ty, pre := range pref {
-				if fd.Name.String() == pre+name || fd.Name.String() == pre+"_"+name {
-					fdList = append(fdList, fd)
-					tyList = append(tyList, ty)
-				}
+			if fd.Name.String() == pre+name || fd.Name.String() == pre+"_"+name {
+				return fd
 			}
 		}
 	}
-	return fdList, tyList
+	return nil
 }
 
 func objFuncCheck(obj types.Object) bool {
@@ -192,9 +187,12 @@ func (a *Analysis) GetFuncData() (interface{}, error) {
 		}
 	}
 
-	// Test, Example, BenchMark
 	if ty != -1 {
+		testFuncData := TestFuncData{a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), pref[ty]}
 		obj := a.getFuncObj(pkg.Types, funcName)
+		if obj == nil {
+			return nil, nil
+		}
 		objPos := a.fs.Position(obj.Pos())
 		objFuncData := FuncData{
 			obj.Pkg().Name(),
@@ -202,24 +200,22 @@ func (a *Analysis) GetFuncData() (interface{}, error) {
 			obj.Name(),
 			objPos.Offset,
 		}
-		fp := TestFuncJson{"test", TestFuncData{a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), pref[ty]}, objFuncData, nil} // TODO
+		fp := TestFuncJson{"test", testFuncData, &objFuncData, nil} // TODO
 		return fp, nil
 	} else {
-		fp := MainFuncJson{"not test", a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), []TestFuncData{}}
-		for _, p := range a.pkgs {
-			for j, f := range p.GoFiles {
-				if strings.HasSuffix(f, "_test.go") {
-					declList, typeList := a.getTestFunc(p.Syntax[j], fd.Name.String())
-					for k, _ := range declList {
-						// TODO: 小文字
-						fp.TestFunc = append(fp.TestFunc, TestFuncData{
-							a.makeFuncData(p.Name, f, declList[k]),
-							pref[typeList[k]],
-						})
+		mainFuncData := a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd)
+		for _, pre := range pref {
+			for _, p := range a.pkgs {
+				for j, f := range p.GoFiles {
+					if strings.HasSuffix(f, "_test.go") {
+						decl := a.getTestFunc(p.Syntax[j], fd.Name.String(), pre)
+						if decl != nil {
+							return MainFuncJson{"not test", mainFuncData, &TestFuncData{a.makeFuncData(p.Name, f, decl), pre}}, nil
+						}
 					}
 				}
 			}
 		}
-		return fp, nil
+		return MainFuncJson{"not test", mainFuncData, nil}, nil
 	}
 }
