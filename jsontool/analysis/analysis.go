@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"golang.org/x/tools/go/packages"
 	"path/filepath"
 	"strings"
@@ -24,14 +25,16 @@ type TestFuncData struct {
 
 // testにいない時に返したい値
 type MainFuncJson struct {
+	Type       string
 	TargetFunc FuncData
 	TestFunc   []TestFuncData
 }
 
 // testにいる時に返したい値
 type TestFuncJson struct {
+	Type        string
 	TestFunc    TestFuncData
-	TargetFunc  TestFuncData
+	TargetFunc  FuncData
 	SubTestName []string
 }
 
@@ -143,37 +146,75 @@ func (a *Analysis) getTestFunc(fn *ast.File, name string) ([]*ast.FuncDecl, []in
 	return fdList, tyList
 }
 
+func objFuncCheck(obj types.Object) bool {
+	if obj == nil {
+		return false
+	}
+	_, ok := obj.(*types.Func)
+	return ok
+}
+
+func (a *Analysis) getFuncObj(pkg *types.Package, name string) types.Object {
+	pName := strings.TrimSuffix(pkg.Name(), "_test")
+	if obj := pkg.Scope().Lookup(name); objFuncCheck(obj) {
+		return obj
+	}
+	lower := strings.ToLower(string(name[0])) + name[1:]
+	if obj := pkg.Scope().Lookup(lower); objFuncCheck(obj) {
+		return obj
+	}
+	for _, imp := range pkg.Imports() {
+		if imp.Name() == pName {
+			if obj := imp.Scope().Lookup(name); objFuncCheck(obj) {
+				return obj
+			}
+		}
+	}
+	return nil
+}
+
 func (a *Analysis) GetFuncData() (interface{}, error) {
 
 	pkg := a.pkgs[a.pkgIdx]
 	fileNode := pkg.Syntax[a.fileIdx]
 
-	if strings.HasSuffix(a.path, "_test.go") {
-		fd := a.getCursorFunc(fileNode)
-		if fd == nil {
-			return nil, nil
+	fd := a.getCursorFunc(fileNode)
+	if fd == nil {
+		return nil, nil
+	}
+	funcName := fd.Name.String()
+	ty := -1
+	for i, pre := range pref {
+		if strings.HasPrefix(funcName, pre) {
+			ty = i
+			funcName = strings.TrimPrefix(funcName, pre)
+			break
 		}
-		/*
-			fp := TestFuncJson{a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), } // TODO
-			for _, p := range a.pkgs {
-				p.TypesInfo.Scopes[
-			}
-		*/
+	}
+
+	// Test, Example, BenchMark
+	if ty != -1 {
+		obj := a.getFuncObj(pkg.Types, funcName)
+		objPos := a.fs.Position(obj.Pos())
+		objFuncData := FuncData{
+			obj.Pkg().Name(),
+			objPos.Filename,
+			obj.Name(),
+			objPos.Offset,
+		}
+		fp := TestFuncJson{"test", TestFuncData{a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), pref[ty]}, objFuncData, nil} // TODO
+		return fp, nil
 	} else {
-		fd := a.getCursorFunc(fileNode)
-		if fd == nil {
-			return nil, nil
-		}
-		fp := MainFuncJson{a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), []TestFuncData{}}
+		fp := MainFuncJson{"not test", a.makeFuncData(pkg.Name, pkg.GoFiles[a.fileIdx], fd), []TestFuncData{}}
 		for _, p := range a.pkgs {
 			for j, f := range p.GoFiles {
 				if strings.HasSuffix(f, "_test.go") {
-					decls, types := a.getTestFunc(p.Syntax[j], fd.Name.String())
-					for k, _ := range decls {
+					declList, typeList := a.getTestFunc(p.Syntax[j], fd.Name.String())
+					for k, _ := range declList {
 						// TODO: 小文字
 						fp.TestFunc = append(fp.TestFunc, TestFuncData{
-							a.makeFuncData(p.Name, f, decls[k]),
-							pref[types[k]],
+							a.makeFuncData(p.Name, f, declList[k]),
+							pref[typeList[k]],
 						})
 					}
 				}
@@ -181,5 +222,4 @@ func (a *Analysis) GetFuncData() (interface{}, error) {
 		}
 		return fp, nil
 	}
-	return nil, nil
 }

@@ -15,6 +15,7 @@ func TestRun(t *testing.T) {
 	}{
 		{"sample1", "./run.go", 400, 10},
 		{"sample1", "./run.go", 500, 10},
+		{"sample1", "./run_test.go", 400, 10},
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
