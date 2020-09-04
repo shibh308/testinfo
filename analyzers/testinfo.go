@@ -7,27 +7,25 @@ import (
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/analysis"
-	"path/filepath"
 	"strings"
 )
 
-
-var pref = [...]string {"Test", "Benchmark", "Example"}
+var pref = [...]string{"Test", "Benchmark", "Example"}
 
 type FuncData struct {
-	testType    int
-	FuncObj     types.Object
-	TestDecl    *ast.FuncDecl
-	CallPos     []token.Pos
+	testType int
+	FuncObj  types.Object
+	TestDecl *ast.FuncDecl
+	CallPos  []token.Pos
 }
 
 // test function type (one of the {"Test", "Benchmark", "Example"})
-func (x FuncData) Type () string {
+func (x FuncData) Type() string {
 	return pref[x.testType]
 }
 
 type TestInfo struct {
-	Pass *analysis.Pass
+	Pass     *analysis.Pass
 	FuncData []*FuncData
 }
 
@@ -40,42 +38,62 @@ func New(pass *analysis.Pass, filter func(string) bool) (TestInfo, error) {
 	return ti, nil
 }
 
-// instead of String()
-func (t *TestInfo) FormatObj(x types.Object) string {
-	if x == nil {
-		return "unknown"
+type JsonPos struct {
+	Line int
+	Col  int `json:"Column"`
+	Ofs  int `json:"OffSet"`
+}
+
+type JsonObj struct {
+	Pkg  string `json:"Package"`
+	File string `json:"FilePath"`
+	Name string `json:"FuncName"`
+	Pos  JsonPos
+}
+
+type JsonFunc struct {
+	Ty       string   `json:"Type"`
+	TestFn   *JsonObj `json:"testFn,omitempty"`
+	TargetFn *JsonObj `json:"targetFn,omitempty"`
+	CallPos  []JsonPos
+}
+
+func (t *TestInfo) FormatPos(pos token.Pos) JsonPos {
+	p := t.Pass.Fset.Position(pos)
+	return JsonPos{
+		p.Line,
+		p.Column,
+		p.Offset,
 	}
-	fs := t.Pass.Fset
-	p := fs.Position(x.Pos())
-	s := fmt.Sprintf("\"%s:%s:%d:%d %s\"", x.Pkg().Name(), filepath.Base(p.Filename), p.Line, p.Column, x.Name())
-	return s
 }
 
 // instead of String()
-func (t *TestInfo) Format(x FuncData) string {
+func (t *TestInfo) FormatObj(x types.Object) *JsonObj {
+	if x == nil {
+		return nil
+	}
+	return &JsonObj{
+		x.Pkg().Name(),
+		t.Pass.Fset.File(x.Pos()).Name(),
+		x.Name(),
+		t.FormatPos(x.Pos()),
+	}
+}
+
+// instead of String()
+func (t *TestInfo) Format(x FuncData) *JsonFunc {
 	testObj := t.Pass.TypesInfo.ObjectOf(x.TestDecl.Name)
 
-	s := fmt.Sprintf(
-		"{" +
-		strings.Join(
-			[]string{
-				"type:%s",
-				"testFunc:%s",
-				"targetFunc:%s",
-				"CallPos:["},
-				", "),
-		x.Type(),
-		t.FormatObj(testObj),
-		t.FormatObj(x.FuncObj))
-
-	for j, cp := range x.CallPos {
-		p := t.Pass.Fset.Position(cp)
-		s += fmt.Sprintf("\"%d:%d\"", p.Line, p.Column)
-		if j != len(x.CallPos) - 1 {
-			s += ", "
-		}
+	var callPos []JsonPos
+	for _, cp := range x.CallPos {
+		callPos = append(callPos, t.FormatPos(cp))
 	}
-	return s + "]}"
+	return &JsonFunc{
+		Ty:       x.Type(),
+		TestFn:   t.FormatObj(testObj),
+		TargetFn: t.FormatObj(x.FuncObj),
+		CallPos:  callPos,
+	}
 }
 
 func callPosList(n *ast.FuncDecl, target types.Object, info *types.Info) []token.Pos {
@@ -109,7 +127,7 @@ func getFuncObj(pkg *types.Package, name string) types.Object {
 	if obj := pkg.Scope().Lookup(name); objFuncCheck(obj) {
 		return obj
 	}
-	lower := strings.ToLower(string(name[0]))+name[1:]
+	lower := strings.ToLower(string(name[0])) + name[1:]
 	if obj := pkg.Scope().Lookup(lower); objFuncCheck(obj) {
 		return obj
 	}
@@ -182,4 +200,3 @@ func (t *TestInfo) GetFuncDataFromName(funcName string) *FuncData {
 	}
 	return nil
 }
-

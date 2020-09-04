@@ -1,6 +1,8 @@
 package analyzers
 
 import (
+	"encoding/json"
+	"fmt"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"path/filepath"
@@ -30,9 +32,9 @@ func init() {
 
 func run(pass *analysis.Pass) (interface{}, error) {
 
-	filterFunc := func(path string) bool{return true}
+	filterFunc := func(path string) bool { return true }
 	if flags.fileName != "" {
-		filterFunc = func(path string) bool{return strings.HasPrefix(filepath.Base(path), flags.fileName)}
+		filterFunc = func(path string) bool { return strings.HasPrefix(filepath.Base(path), flags.fileName) }
 	}
 	testInfo, err := New(pass, filterFunc)
 
@@ -43,14 +45,23 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	if flags.funcName != "" {
 		x := testInfo.GetFuncDataFromName(flags.funcName)
 		if x != nil {
-			pass.Reportf(x.TestDecl.Pos(), testInfo.Format(*x))
+			j, err := json.Marshal(testInfo.Format(*x))
+			if err != nil {
+				return nil, err
+			}
+			fmt.Println(string(j))
+			pass.Reportf(x.TestDecl.Pos(), string(j))
 		}
 	} else {
 		for _, x := range testInfo.FuncData {
-			pass.Reportf(x.TestDecl.Pos(), testInfo.Format(*x))
+			j, err := json.Marshal(testInfo.Format(*x))
+			if err != nil {
+				return nil, err
+			}
+			pass.Reportf(x.TestDecl.Pos(), string(j))
+			fmt.Println(string(j))
 		}
 	}
 
 	return nil, nil
 }
-
